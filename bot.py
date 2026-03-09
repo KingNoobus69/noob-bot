@@ -2,14 +2,25 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from config import DISCORD_TOKEN, GUILD_ID
-from database import init_db, upsert_link, get_tag, delete_link, get_all_links
-from clash_api import get_player_data, normalise_tag
+from config import DISCORD_TOKEN, GUILD_ID, CLAN_TAG
+from database import (
+    init_db,
+    insert_link,
+    update_link,
+    get_tag,
+    get_discord_user_by_tag,
+    delete_link,
+    get_all_links,
+    get_all_links_by_tag
+)
+from clash_api import get_player_data, get_clan_members, normalise_tag
 
 
 REGISTER_ALLOWED_ROLES = {"Developer", "S.B Leader", "TempAdmin", "Moderator"}
 LIST_ALLOWED_ROLES = {"Developer", "S.B Leader", "TempAdmin", "Moderator"}
-UNLINK_ALLOWED_ROLES = {"Developer", "S.B Leader"}
+UNLINK_ALLOWED_ROLES = {"Developer", "S.B Leader", "TempAdmin", "Moderator"}
+UPDATE_ALLOWED_ROLES = {"Developer", "S.B Leader", "TempAdmin", "Moderator"}
+PLAYER_DB_ALLOWED_ROLES = {"Developer", "S.B Leader", "TempAdmin", "Moderator"}
 
 
 def user_has_allowed_role(interaction: discord.Interaction, allowed_roles: set[str]) -> bool:
@@ -38,6 +49,18 @@ def unlink_only():
     return app_commands.check(predicate)
 
 
+def update_only():
+    async def predicate(interaction: discord.Interaction) -> bool:
+        return user_has_allowed_role(interaction, UPDATE_ALLOWED_ROLES)
+    return app_commands.check(predicate)
+
+
+def player_db_only():
+    async def predicate(interaction: discord.Interaction) -> bool:
+        return user_has_allowed_role(interaction, PLAYER_DB_ALLOWED_ROLES)
+    return app_commands.check(predicate)
+
+
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -61,10 +84,26 @@ async def on_ready():
 @app_commands.describe(user="Discord member", tag="Clash Royale player tag")
 @register_only()
 async def register(interaction: discord.Interaction, user: discord.Member, tag: str):
-    try:
-        clean_tag = normalise_tag(tag)
-        upsert_link(user.id, clean_tag, interaction.user.id)
+    clean_tag = normalise_tag(tag)
 
+    existing_user_tag = get_tag(user.id)
+    if existing_user_tag:
+        await interaction.response.send_message(
+            f"{user.mention} is already linked to `{existing_user_tag}`. Use `/update` instead.",
+            ephemeral=True
+        )
+        return
+
+    existing_tag_owner = get_discord_user_by_tag(clean_tag)
+    if existing_tag_owner:
+        await interaction.response.send_message(
+            f"The tag `{clean_tag}` is already linked to another Discord user.",
+            ephemeral=True
+        )
+        return
+
+    try:
+        insert_link(user.id, clean_tag, interaction.user.id)
         await interaction.response.send_message(
             f"Linked {user.mention} to `{clean_tag}`.",
             ephemeral=True
@@ -72,6 +111,48 @@ async def register(interaction: discord.Interaction, user: discord.Member, tag: 
     except Exception as e:
         await interaction.response.send_message(
             f"Failed to register player: {e}",
+            ephemeral=True
+        )
+
+
+@bot.tree.command(name="update", description="Update a linked Clash Royale tag for a Discord member")
+@app_commands.describe(user="Discord member", tag="New Clash Royale player tag")
+@update_only()
+async def update(interaction: discord.Interaction, user: discord.Member, tag: str):
+    clean_tag = normalise_tag(tag)
+
+    existing_user_tag = get_tag(user.id)
+    if not existing_user_tag:
+        await interaction.response.send_message(
+            f"{user.mention} is not linked yet. Use `/register` first.",
+            ephemeral=True
+        )
+        return
+
+    existing_tag_owner = get_discord_user_by_tag(clean_tag)
+    if existing_tag_owner and str(existing_tag_owner) != str(user.id):
+        await interaction.response.send_message(
+            f"The tag `{clean_tag}` is already linked to another Discord user.",
+            ephemeral=True
+        )
+        return
+
+    if existing_user_tag == clean_tag:
+        await interaction.response.send_message(
+            f"{user.mention} is already linked to `{clean_tag}`.",
+            ephemeral=True
+        )
+        return
+
+    try:
+        update_link(user.id, clean_tag, interaction.user.id)
+        await interaction.response.send_message(
+            f"Updated {user.mention} from `{existing_user_tag}` to `{clean_tag}`.",
+            ephemeral=True
+        )
+    except Exception as e:
+        await interaction.response.send_message(
+            f"Failed to update player: {e}",
             ephemeral=True
         )
 
@@ -120,6 +201,65 @@ async def player(interaction: discord.Interaction, user: discord.Member):
     except Exception as e:
         await interaction.followup.send(
             f"Failed to fetch player data: {e}",
+            ephemeral=True
+        )
+
+
+@bot.tree.command(name="player_db", description="Show clan members and Discord link status")
+@player_db_only()
+async def player_db(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=False)
+
+    try:
+        clan_members = await get_clan_members(CLAN_TAG)
+        link_rows = get_all_links_by_tag()
+        link_map = {cr_tag: discord_user_id for cr_tag, discord_user_id in link_rows}
+
+        lines = []
+        header = "`CR Name              | CR Tag       | Linked | Discord User`"
+        lines.append(header)
+        lines.append("`--------------------------------------------------------------`")
+
+        for member in clan_members:
+            name = member.get("name", "Unknown")
+            tag = member.get("tag", "N/A")
+
+            discord_user_id = link_map.get(tag)
+            linked_text = "Yes" if discord_user_id else "No"
+
+            if discord_user_id:
+                discord_text = f"<@{discord_user_id}>"
+            else:
+                discord_text = "-"
+
+            line = f"`{name[:20]:20} | {tag[:12]:12} | {linked_text:6} |` {discord_text}"
+            lines.append(line)
+
+        message = "\n".join(lines)
+
+        if len(message) <= 2000:
+            await interaction.followup.send(message, ephemeral=False)
+        else:
+            chunks = []
+            current = []
+
+            for line in lines:
+                test = "\n".join(current + [line])
+                if len(test) > 1900:
+                    chunks.append("\n".join(current))
+                    current = [line]
+                else:
+                    current.append(line)
+
+            if current:
+                chunks.append("\n".join(current))
+
+            for chunk in chunks:
+                await interaction.followup.send(chunk, ephemeral=False)
+
+    except Exception as e:
+        await interaction.followup.send(
+            f"Failed to build player database view: {e}",
             ephemeral=True
         )
 
@@ -180,8 +320,10 @@ async def listplayers(interaction: discord.Interaction):
 
 
 @register.error
+@update.error
 @unlink.error
 @listplayers.error
+@player_db.error
 async def admin_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.errors.CheckFailure):
         if interaction.response.is_done():
