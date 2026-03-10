@@ -222,88 +222,60 @@ async def player_db(interaction: discord.Interaction):
 
         linked_count = sum(1 for member in clan_members if member.get("tag") in link_map)
 
-        def pad(text: str, width: int) -> str:
-            text = text.replace("`", "")
-            return text[:width].ljust(width)
+        header_lines = [
+            f"**{clan_name} ({clan_tag})**",
+            "Current clan member Discord link overview",
+            "",
+            f"`{'CR Name':<20} | {'CR Tag':<12} | {'Linked':<6} | {'Discord User':<20}`",
+            f"`{'-' * 20}-+-{'-' * 12}-+-{'-' * 6}-+-{'-' * 20}`"
+        ]
 
-        name_width = 18
-        tag_width = 12
-        link_width = 8
-
-        header = (
-            f"**{'CR Name'.ljust(name_width)} | "
-            f"{'CR Tag'.ljust(tag_width)} | "
-            f"{'Linked'.ljust(link_width)} | Discord User**"
-        )
-
-        separator = "─" * 62
-
-        rows = []
+        lines = []
         for member in clan_members:
-            name = member.get("name", "Unknown")
-            tag = member.get("tag", "N/A")
+            name = member.get("name", "Unknown")[:20]
+            tag = member.get("tag", "N/A")[:12]
 
             discord_user_id = link_map.get(tag)
-            linked_text = "✅ Yes" if discord_user_id else "❌ No"
+            linked_text = "Yes" if discord_user_id else "No"
 
             if discord_user_id:
                 discord_text = f"<@{discord_user_id}>"
             else:
                 discord_text = "-"
 
-            row = (
-                f"`{pad(name, name_width)} | "
-                f"{pad(tag, tag_width)} | "
-                f"{pad(linked_text, link_width)}`"
-                f" | {discord_text}"
-            )
-            rows.append(row)
+            table_part = f"`{name:<20} | {tag:<12} | {linked_text:<6} |`"
+            lines.append(f"{table_part} {discord_text}")
 
-        pages = []
-        current_rows = []
+        footer = f"\n**Linked players:** {linked_count}/{len(clan_members)}"
 
-        for row in rows:
-            test_message = "\n".join(
-                [
-                    f"**{clan_name} ({clan_tag})**",
-                    "Current clan member Discord link overview",
-                    "",
-                    f"**Page 99/99**",
-                    header,
-                    separator,
-                    *current_rows,
-                    row,
-                    "",
-                    f"**Linked players:** {linked_count}/{len(clan_members)}",
-                ]
-            )
+        messages = []
+        current_message = "\n".join(header_lines)
 
+        for line in lines:
+            test_message = current_message + "\n" + line + footer
             if len(test_message) > 1900:
-                pages.append(current_rows)
-                current_rows = [row]
+                messages.append(current_message + footer)
+                current_message = "\n".join(header_lines[:3]) + "\n" + line
             else:
-                current_rows.append(row)
+                current_message += "\n" + line
 
-        if current_rows:
-            pages.append(current_rows)
+        if current_message:
+            messages.append(current_message + footer)
 
-        for index, page_rows in enumerate(pages, start=1):
-            message = "\n".join(
-                [
-                    f"**{clan_name} ({clan_tag})**",
-                    "Current clan member Discord link overview",
-                    "",
-                    f"**Page {index}/{len(pages)}**",
-                    header,
-                    separator,
-                    *page_rows,
-                    "",
-                    f"**Linked players:** {linked_count}/{len(clan_members)}",
-                ]
-            )
+        for i, msg in enumerate(messages, start=1):
+            if len(messages) > 1:
+                page_header = f"**{clan_name} ({clan_tag})**\nCurrent clan member Discord link overview\n**Page {i}/{len(messages)}**\n"
+                if i == 1:
+                    body = "\n".join(header_lines[3:]) + "\n" + "\n".join(msg.split("\n")[5:-1])
+                    final_msg = page_header + body + "\n" + msg.split("\n")[-1]
+                else:
+                    body_lines = msg.split("\n")[3:-1]
+                    final_msg = page_header + "\n".join(header_lines[3:]) + "\n" + "\n".join(body_lines) + "\n" + msg.split("\n")[-1]
+            else:
+                final_msg = msg
 
             await interaction.followup.send(
-                message,
+                final_msg,
                 ephemeral=False,
                 allowed_mentions=discord.AllowedMentions.none()
             )
