@@ -357,6 +357,22 @@ async def announce(interaction: discord.Interaction):
     try:
         race_data = await get_current_river_race(CLAN_TAG)
 
+        # Block training days
+        period_type = str(race_data.get("periodType", "")).lower()
+        section_index = race_data.get("sectionIndex")
+
+        is_training_day = (
+            "training" in period_type
+            or section_index == 0
+        )
+
+        if is_training_day:
+            await interaction.followup.send(
+                "Cannot announce during Training Days.",
+                ephemeral=False
+            )
+            return
+
         # Find our clan block safely
         our_clan = None
 
@@ -414,21 +430,15 @@ async def announce(interaction: discord.Interaction):
 
                 groups[attacks_remaining].append(entry)
 
+        # Only include non-empty categories
         sections = []
         for remaining in [4, 3, 2, 1]:
             players = groups[remaining]
             if players:
                 section = "\n".join(players)
-            else:
-                section = "*None*"
+                sections.append(f"**{remaining} attacks remaining**\n{section}")
 
-            sections.append(
-                f"**{remaining} attacks remaining**\n{section}"
-            )
-
-        everyone_done = all(len(groups[n]) == 0 for n in [4, 3, 2, 1])
-
-        if everyone_done:
+        if not sections:
             message = (
                 f"**{clan_name} ({clan_tag})**\n"
                 "Manual war nudge\n\n"
