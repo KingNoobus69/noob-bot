@@ -220,55 +220,57 @@ async def player_db(interaction: discord.Interaction):
         link_rows = get_all_links_by_tag()
         link_map = {cr_tag: discord_user_id for cr_tag, discord_user_id in link_rows}
 
-        header = f"{'CR Name':<18} | {'CR Tag':<12} | {'Linked':<6} | Discord User"
-        separator = "-" * 65
-
         pages = []
         current_lines = []
+        rows_per_page = 12
 
-        for member in clan_members:
-            name = member.get("name", "Unknown")[:18]
-            tag = member.get("tag", "N/A")[:12]
+        linked_count = 0
+
+        for index, member in enumerate(clan_members, start=1):
+            name = member.get("name", "Unknown")
+            tag = member.get("tag", "N/A")
 
             discord_user_id = link_map.get(tag)
-            linked_text = "Yes" if discord_user_id else "No"
+            linked_text = "✅ Yes" if discord_user_id else "❌ No"
 
             if discord_user_id:
-                member_obj = interaction.guild.get_member(int(discord_user_id))
-                discord_text = f"@{member_obj.display_name}" if member_obj else "Unknown User"
+                linked_count += 1
+                discord_text = f"<@{discord_user_id}>"
             else:
                 discord_text = "-"
 
-            line = f"{name:<18} | {tag:<12} | {linked_text:<6} | {discord_text}"
+            line = f"**{name}** • `{tag}` • {linked_text} • {discord_text}"
+            current_lines.append(line)
 
-            test_block = "\n".join([header, separator] + current_lines + [line])
-
-            # Keep well below Discord embed description limit
-            if len(test_block) > 3500:
+            if len(current_lines) >= rows_per_page:
                 pages.append(current_lines)
-                current_lines = [line]
-            else:
-                current_lines.append(line)
+                current_lines = []
 
         if current_lines:
             pages.append(current_lines)
 
-        linked_count = sum(1 for member in clan_members if member.get("tag") in link_map)
-
-        for index, page_lines in enumerate(pages, start=1):
-            table_text = "```text\n" + header + "\n" + separator + "\n" + "\n".join(page_lines) + "\n```"
-
+        for page_number, page_lines in enumerate(pages, start=1):
             embed = discord.Embed(
                 title=f"{clan_name} ({clan_tag})",
-                description=f"Current clan member Discord link overview\n\n{table_text}",
+                description="Current clan member Discord link overview",
                 color=discord.Color.blue()
             )
 
-            embed.set_footer(
-                text=f"Page {index}/{len(pages)} • Linked players: {linked_count}/{len(clan_members)}"
+            embed.add_field(
+                name="CR Name • CR Tag • Linked • Discord",
+                value="\n".join(page_lines),
+                inline=False
             )
 
-            await interaction.followup.send(embed=embed, ephemeral=False)
+            embed.set_footer(
+                text=f"Page {page_number}/{len(pages)} • Linked players: {linked_count}/{len(clan_members)}"
+            )
+
+            await interaction.followup.send(
+                embed=embed,
+                ephemeral=False,
+                allowed_mentions=discord.AllowedMentions.none()
+            )
 
     except Exception as e:
         await interaction.followup.send(
