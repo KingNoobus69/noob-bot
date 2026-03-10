@@ -1,6 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
+from clash_api import get_player_data, get_clan_data, normalise_tag
 
 from config import DISCORD_TOKEN, GUILD_ID, CLAN_TAG
 from database import (
@@ -211,51 +212,61 @@ async def player_db(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=False)
 
     try:
-        clan_members = await get_clan_members(CLAN_TAG)
+        clan_data = await get_clan_data(CLAN_TAG)
+        clan_name = clan_data.get("name", "Unknown Clan")
+        clan_tag = clan_data.get("tag", CLAN_TAG)
+        clan_members = clan_data.get("memberList", [])
+
         link_rows = get_all_links_by_tag()
         link_map = {cr_tag: discord_user_id for cr_tag, discord_user_id in link_rows}
 
-        lines = []
-        header = "`CR Name              | CR Tag       | Linked | Discord User`"
-        lines.append(header)
-        lines.append("`--------------------------------------------------------------`")
+        pages = []
+        current_lines = []
+
+        header = f"{'CR Name':<18} | {'CR Tag':<12} | {'Linked':<6} | Discord User"
+        separator = "-" * 65
 
         for member in clan_members:
-            name = member.get("name", "Unknown")
-            tag = member.get("tag", "N/A")
+            name = member.get("name", "Unknown")[:18]
+            tag = member.get("tag", "N/A")[:12]
 
             discord_user_id = link_map.get(tag)
             linked_text = "Yes" if discord_user_id else "No"
 
             if discord_user_id:
-                discord_text = f"<@{discord_user_id}>"
+                member_obj = interaction.guild.get_member(int(discord_user_id))
+                discord_text = f"@{member_obj.display_name}" if member_obj else "Unknown User"
             else:
                 discord_text = "-"
 
-            line = f"`{name[:20]:20} | {tag[:12]:12} | {linked_text:6} |` {discord_text}"
-            lines.append(line)
+            line = f"{name:<18} | {tag:<12} | {linked_text:<6} | {discord_text}"
 
-        message = "\n".join(lines)
+            if len("\n".join(current_lines + [line])) > 1500:
+                pages.append(current_lines)
+                current_lines = [line]
+            else:
+                current_lines.append(line)
 
-        if len(message) <= 2000:
-            await interaction.followup.send(message, ephemeral=False)
-        else:
-            chunks = []
-            current = []
+        if current_lines:
+            pages.append(current_lines)
 
-            for line in lines:
-                test = "\n".join(current + [line])
-                if len(test) > 1900:
-                    chunks.append("\n".join(current))
-                    current = [line]
-                else:
-                    current.append(line)
+        for index, page_lines in enumerate(pages, start=1):
+            embed = discord.Embed(
+                title=f"{clan_name} ({clan_tag})",
+                description="Current clan member Discord link overview",
+                color=discord.Color.blue()
+            )
 
-            if current:
-                chunks.append("\n".join(current))
+            table_text = "```text\n" + header + "\n" + separator + "\n" + "\n".join(page_lines) + "\n```"
+            embed.add_field(
+                name=f"Player Database — Page {index}/{len(pages)}",
+                value=table_text,
+                inline=False
+            )
 
-            for chunk in chunks:
-                await interaction.followup.send(chunk, ephemeral=False)
+            embed.set_footer(text=f"Linked players: {sum(1 for _, user_id in link_map.items() if user_id)} | Clan members: {len(clan_members)}")
+
+            await interaction.followup.send(embed=embed, ephemeral=False)
 
     except Exception as e:
         await interaction.followup.send(
