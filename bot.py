@@ -239,12 +239,14 @@ async def player_db(interaction: discord.Interaction):
             linked_text = "Yes" if discord_user_id else "No"
 
             if discord_user_id:
-                discord_text = f"<@{discord_user_id}>"
+                member_obj = interaction.guild.get_member(int(discord_user_id))
+                discord_text = f"@{member_obj.display_name}" if member_obj else "@Unknown User"
             else:
                 discord_text = "-"
 
-            table_part = f"`{name:<20} | {tag:<12} | {linked_text:<6} |`"
-            lines.append(f"{table_part} {discord_text}")
+            discord_text = discord_text[:20]
+            line = f"`{name:<20} | {tag:<12} | {linked_text:<6} | {discord_text:<20}`"
+            lines.append(line)
 
         footer = f"\n**Linked players:** {linked_count}/{len(clan_members)}"
 
