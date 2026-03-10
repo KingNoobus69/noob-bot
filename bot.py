@@ -222,7 +222,6 @@ async def player_db(interaction: discord.Interaction):
 
         linked_count = sum(1 for member in clan_members if member.get("tag") in link_map)
 
-        # Fixed column widths
         NAME_WIDTH = 20
         TAG_WIDTH = 12
         LINKED_WIDTH = 6
@@ -243,19 +242,25 @@ async def player_db(interaction: discord.Interaction):
 
         rows = []
         for member in clan_members:
-            name = member.get("name", "Unknown")[:NAME_WIDTH]
-            tag = member.get("tag", "N/A")[:TAG_WIDTH]
+            name = member.get("name", "Unknown")
+            tag = member.get("tag", "N/A")
+
+            name = name.replace("`", "")[:NAME_WIDTH]
+            tag = tag[:TAG_WIDTH]
 
             discord_user_id = link_map.get(tag)
             linked_text = "Yes" if discord_user_id else "No"
 
             if discord_user_id:
-                member_obj = interaction.guild.get_member(int(discord_user_id))
-                discord_text = f"@{member_obj.display_name}" if member_obj else "@Unknown User"
+                try:
+                    member_obj = await interaction.guild.fetch_member(int(discord_user_id))
+                    discord_text = f"@{member_obj.display_name}"
+                except Exception:
+                    discord_text = "@Unknown User"
             else:
                 discord_text = "-"
 
-            discord_text = discord_text[:DISCORD_WIDTH]
+            discord_text = discord_text.replace("`", "")[:DISCORD_WIDTH]
 
             row = (
                 f"`{name:<{NAME_WIDTH}} | "
@@ -265,22 +270,10 @@ async def player_db(interaction: discord.Interaction):
             )
             rows.append(row)
 
-        # Build pages safely under Discord's 2000-char limit
         pages = []
         current_rows = []
 
-        base_top = [
-            f"**{clan_name} ({clan_tag})**",
-            "Current clan member Discord link overview",
-            "",
-            table_header,
-            table_separator,
-        ]
-
         for row in rows:
-            tentative_rows = current_rows + [row]
-
-            # Build a test message with worst-case footer/page header included
             test_message = "\n".join(
                 [
                     f"**{clan_name} ({clan_tag})**",
@@ -289,7 +282,8 @@ async def player_db(interaction: discord.Interaction):
                     "**Page 99/99**",
                     table_header,
                     table_separator,
-                    *tentative_rows,
+                    *current_rows,
+                    row,
                     "",
                     f"**Linked players:** {linked_count}/{len(clan_members)}",
                 ]
@@ -299,7 +293,7 @@ async def player_db(interaction: discord.Interaction):
                 pages.append(current_rows)
                 current_rows = [row]
             else:
-                current_rows = tentative_rows
+                current_rows.append(row)
 
         if current_rows:
             pages.append(current_rows)
