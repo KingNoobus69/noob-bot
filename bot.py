@@ -222,18 +222,29 @@ async def player_db(interaction: discord.Interaction):
 
         linked_count = sum(1 for member in clan_members if member.get("tag") in link_map)
 
-        header_lines = [
-            f"**{clan_name} ({clan_tag})**",
-            "Current clan member Discord link overview",
-            "",
-            f"`{'CR Name':<20} | {'CR Tag':<12} | {'Linked':<6} | {'Discord User':<20}`",
-            f"`{'-' * 20}-+-{'-' * 12}-+-{'-' * 6}-+-{'-' * 20}`"
-        ]
+        # Fixed column widths
+        NAME_WIDTH = 20
+        TAG_WIDTH = 12
+        LINKED_WIDTH = 6
+        DISCORD_WIDTH = 20
 
-        lines = []
+        table_header = (
+            f"`{'CR Name':<{NAME_WIDTH}} | "
+            f"{'CR Tag':<{TAG_WIDTH}} | "
+            f"{'Linked':<{LINKED_WIDTH}} | "
+            f"{'Discord User':<{DISCORD_WIDTH}}`"
+        )
+        table_separator = (
+            f"`{'-' * NAME_WIDTH}-+-"
+            f"{'-' * TAG_WIDTH}-+-"
+            f"{'-' * LINKED_WIDTH}-+-"
+            f"{'-' * DISCORD_WIDTH}`"
+        )
+
+        rows = []
         for member in clan_members:
-            name = member.get("name", "Unknown")[:20]
-            tag = member.get("tag", "N/A")[:12]
+            name = member.get("name", "Unknown")[:NAME_WIDTH]
+            tag = member.get("tag", "N/A")[:TAG_WIDTH]
 
             discord_user_id = link_map.get(tag)
             linked_text = "Yes" if discord_user_id else "No"
@@ -244,43 +255,71 @@ async def player_db(interaction: discord.Interaction):
             else:
                 discord_text = "-"
 
-            discord_text = discord_text[:20]
-            line = f"`{name:<20} | {tag:<12} | {linked_text:<6} | {discord_text:<20}`"
-            lines.append(line)
+            discord_text = discord_text[:DISCORD_WIDTH]
 
-        footer = f"\n**Linked players:** {linked_count}/{len(clan_members)}"
-
-        messages = []
-        current_message = "\n".join(header_lines)
-
-        for line in lines:
-            test_message = current_message + "\n" + line + footer
-            if len(test_message) > 1900:
-                messages.append(current_message + footer)
-                current_message = "\n".join(header_lines[:3]) + "\n" + line
-            else:
-                current_message += "\n" + line
-
-        if current_message:
-            messages.append(current_message + footer)
-
-        for i, msg in enumerate(messages, start=1):
-            if len(messages) > 1:
-                page_header = f"**{clan_name} ({clan_tag})**\nCurrent clan member Discord link overview\n**Page {i}/{len(messages)}**\n"
-                if i == 1:
-                    body = "\n".join(header_lines[3:]) + "\n" + "\n".join(msg.split("\n")[5:-1])
-                    final_msg = page_header + body + "\n" + msg.split("\n")[-1]
-                else:
-                    body_lines = msg.split("\n")[3:-1]
-                    final_msg = page_header + "\n".join(header_lines[3:]) + "\n" + "\n".join(body_lines) + "\n" + msg.split("\n")[-1]
-            else:
-                final_msg = msg
-
-            await interaction.followup.send(
-                final_msg,
-                ephemeral=False,
-                allowed_mentions=discord.AllowedMentions.none()
+            row = (
+                f"`{name:<{NAME_WIDTH}} | "
+                f"{tag:<{TAG_WIDTH}} | "
+                f"{linked_text:<{LINKED_WIDTH}} | "
+                f"{discord_text:<{DISCORD_WIDTH}}`"
             )
+            rows.append(row)
+
+        # Build pages safely under Discord's 2000-char limit
+        pages = []
+        current_rows = []
+
+        base_top = [
+            f"**{clan_name} ({clan_tag})**",
+            "Current clan member Discord link overview",
+            "",
+            table_header,
+            table_separator,
+        ]
+
+        for row in rows:
+            tentative_rows = current_rows + [row]
+
+            # Build a test message with worst-case footer/page header included
+            test_message = "\n".join(
+                [
+                    f"**{clan_name} ({clan_tag})**",
+                    "Current clan member Discord link overview",
+                    "",
+                    "**Page 99/99**",
+                    table_header,
+                    table_separator,
+                    *tentative_rows,
+                    "",
+                    f"**Linked players:** {linked_count}/{len(clan_members)}",
+                ]
+            )
+
+            if len(test_message) > 1900:
+                pages.append(current_rows)
+                current_rows = [row]
+            else:
+                current_rows = tentative_rows
+
+        if current_rows:
+            pages.append(current_rows)
+
+        for index, page_rows in enumerate(pages, start=1):
+            message = "\n".join(
+                [
+                    f"**{clan_name} ({clan_tag})**",
+                    "Current clan member Discord link overview",
+                    "",
+                    f"**Page {index}/{len(pages)}**",
+                    table_header,
+                    table_separator,
+                    *page_rows,
+                    "",
+                    f"**Linked players:** {linked_count}/{len(clan_members)}",
+                ]
+            )
+
+            await interaction.followup.send(message, ephemeral=False)
 
     except Exception as e:
         await interaction.followup.send(
