@@ -222,52 +222,20 @@ async def player_db(interaction: discord.Interaction):
 
         linked_count = sum(1 for member in clan_members if member.get("tag") in link_map)
 
-        NAME_WIDTH = 20
-        TAG_WIDTH = 12
-        LINKED_WIDTH = 6
-        DISCORD_WIDTH = 20
-
-        table_header = (
-            f"`{'CR Name':<{NAME_WIDTH}} | "
-            f"{'CR Tag':<{TAG_WIDTH}} | "
-            f"{'Linked':<{LINKED_WIDTH}} | "
-            f"{'Discord User':<{DISCORD_WIDTH}}`"
-        )
-        table_separator = (
-            f"`{'-' * NAME_WIDTH}-+-"
-            f"{'-' * TAG_WIDTH}-+-"
-            f"{'-' * LINKED_WIDTH}-+-"
-            f"{'-' * DISCORD_WIDTH}`"
-        )
-
         rows = []
         for member in clan_members:
-            name = member.get("name", "Unknown")
+            name = member.get("name", "Unknown").replace("`", "")
             tag = member.get("tag", "N/A")
 
-            name = name.replace("`", "")[:NAME_WIDTH]
-            tag = tag[:TAG_WIDTH]
-
             discord_user_id = link_map.get(tag)
-            linked_text = "Yes" if discord_user_id else "No"
+            linked_text = "✅ Linked" if discord_user_id else "❌ Not Linked"
 
             if discord_user_id:
-                try:
-                    member_obj = await interaction.guild.fetch_member(int(discord_user_id))
-                    discord_text = f"@{member_obj.display_name}"
-                except Exception:
-                    discord_text = "@Unknown User"
+                discord_text = f"<@{discord_user_id}>"
             else:
                 discord_text = "-"
 
-            discord_text = discord_text.replace("`", "")[:DISCORD_WIDTH]
-
-            row = (
-                f"`{name:<{NAME_WIDTH}} | "
-                f"{tag:<{TAG_WIDTH}} | "
-                f"{linked_text:<{LINKED_WIDTH}} | "
-                f"{discord_text:<{DISCORD_WIDTH}}`"
-            )
+            row = f"**{name}** • `{tag}` • {linked_text} • {discord_text}"
             rows.append(row)
 
         pages = []
@@ -279,9 +247,7 @@ async def player_db(interaction: discord.Interaction):
                     f"**{clan_name} ({clan_tag})**",
                     "Current clan member Discord link overview",
                     "",
-                    "**Page 99/99**",
-                    table_header,
-                    table_separator,
+                    f"**Page 99/99**",
                     *current_rows,
                     row,
                     "",
@@ -305,15 +271,17 @@ async def player_db(interaction: discord.Interaction):
                     "Current clan member Discord link overview",
                     "",
                     f"**Page {index}/{len(pages)}**",
-                    table_header,
-                    table_separator,
                     *page_rows,
                     "",
                     f"**Linked players:** {linked_count}/{len(clan_members)}",
                 ]
             )
 
-            await interaction.followup.send(message, ephemeral=False)
+            await interaction.followup.send(
+                message,
+                ephemeral=False,
+                allowed_mentions=discord.AllowedMentions.none()
+            )
 
     except Exception as e:
         await interaction.followup.send(
