@@ -222,20 +222,41 @@ async def player_db(interaction: discord.Interaction):
 
         linked_count = sum(1 for member in clan_members if member.get("tag") in link_map)
 
+        def pad(text: str, width: int) -> str:
+            text = text.replace("`", "")
+            return text[:width].ljust(width)
+
+        name_width = 18
+        tag_width = 12
+        link_width = 8
+
+        header = (
+            f"**{'CR Name'.ljust(name_width)} | "
+            f"{'CR Tag'.ljust(tag_width)} | "
+            f"{'Linked'.ljust(link_width)} | Discord User**"
+        )
+
+        separator = "─" * 62
+
         rows = []
         for member in clan_members:
-            name = member.get("name", "Unknown").replace("`", "")
+            name = member.get("name", "Unknown")
             tag = member.get("tag", "N/A")
 
             discord_user_id = link_map.get(tag)
-            linked_text = "✅ Linked" if discord_user_id else "❌ Not Linked"
+            linked_text = "✅ Yes" if discord_user_id else "❌ No"
 
             if discord_user_id:
                 discord_text = f"<@{discord_user_id}>"
             else:
                 discord_text = "-"
 
-            row = f"**{name}** • `{tag}` • {linked_text} • {discord_text}"
+            row = (
+                f"`{pad(name, name_width)} | "
+                f"{pad(tag, tag_width)} | "
+                f"{pad(linked_text, link_width)}`"
+                f" | {discord_text}"
+            )
             rows.append(row)
 
         pages = []
@@ -248,6 +269,8 @@ async def player_db(interaction: discord.Interaction):
                     "Current clan member Discord link overview",
                     "",
                     f"**Page 99/99**",
+                    header,
+                    separator,
                     *current_rows,
                     row,
                     "",
@@ -271,6 +294,8 @@ async def player_db(interaction: discord.Interaction):
                     "Current clan member Discord link overview",
                     "",
                     f"**Page {index}/{len(pages)}**",
+                    header,
+                    separator,
                     *page_rows,
                     "",
                     f"**Linked players:** {linked_count}/{len(clan_members)}",
