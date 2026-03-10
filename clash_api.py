@@ -65,3 +65,19 @@ async def get_clan_data(clan_tag: str):
 
             error_text = await response.text()
             raise Exception(f"Clash Royale API returned {response.status}: {error_text}")
+
+async def get_current_river_race(clan_tag: str):
+    encoded_tag = quote(clan_tag, safe="")
+    url = f"{BASE_URL}/clans/{encoded_tag}/currentriverrace"
+
+    headers = {
+        "Authorization": f"Bearer {CLASH_API_TOKEN}"
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as response:
+            if response.status == 200:
+                return await response.json()
+
+            error_text = await response.text()
+            raise Exception(f"Clash Royale API returned {response.status}: {error_text}")

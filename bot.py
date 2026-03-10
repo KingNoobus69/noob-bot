@@ -1,7 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from clash_api import get_player_data, get_clan_data, normalise_tag
+from clash_api import get_player_data, get_clan_data, get_current_river_race, normalise_tag
 
 from config import DISCORD_TOKEN, GUILD_ID, CLAN_TAG
 from database import (
@@ -22,6 +22,7 @@ LIST_ALLOWED_ROLES = {"Developer", "S.B Leader", "TempAdmin", "Moderator"}
 UNLINK_ALLOWED_ROLES = {"Developer", "S.B Leader", "TempAdmin", "Moderator"}
 UPDATE_ALLOWED_ROLES = {"Developer", "S.B Leader", "TempAdmin", "Moderator"}
 PLAYER_DB_ALLOWED_ROLES = {"Developer", "S.B Leader", "TempAdmin", "Moderator", "S.O Leader", "S.B Co-Leader", "S.O Co-Leader"}
+ANNOUNCE_ALLOWED_ROLES = {"The Warhorn Crew"}
 
 
 def user_has_allowed_role(interaction: discord.Interaction, allowed_roles: set[str]) -> bool:
@@ -59,6 +60,12 @@ def update_only():
 def player_db_only():
     async def predicate(interaction: discord.Interaction) -> bool:
         return user_has_allowed_role(interaction, PLAYER_DB_ALLOWED_ROLES)
+    return app_commands.check(predicate)
+
+
+def announce_only():
+    async def predicate(interaction: discord.Interaction) -> bool:
+        return user_has_allowed_role(interaction, ANNOUNCE_ALLOWED_ROLES)
     return app_commands.check(predicate)
 
 
@@ -342,11 +349,117 @@ async def listplayers(interaction: discord.Interaction):
         )
 
 
+@bot.tree.command(name="announce", description="Send a manual war nudge for players with attacks remaining")
+@announce_only()
+async def announce(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=False)
+
+    try:
+        race_data = await get_current_river_race(CLAN_TAG)
+
+        # Find our clan block safely
+        our_clan = None
+
+        if race_data.get("clan") and normalise_tag(race_data["clan"].get("tag", "")) == normalise_tag(CLAN_TAG):
+            our_clan = race_data["clan"]
+        else:
+            for clan in race_data.get("clans", []):
+                if normalise_tag(clan.get("tag", "")) == normalise_tag(CLAN_TAG):
+                    our_clan = clan
+                    break
+
+        if not our_clan:
+            await interaction.followup.send(
+                "Could not find Swimming Banana in the current river race data.",
+                ephemeral=True
+            )
+            return
+
+        clan_name = our_clan.get("name", "Unknown Clan")
+        clan_tag = our_clan.get("tag", CLAN_TAG)
+        participants = our_clan.get("participants", [])
+
+        link_rows = get_all_links_by_tag()
+        link_map = {cr_tag: discord_user_id for cr_tag, discord_user_id in link_rows}
+
+        groups = {
+            4: [],
+            3: [],
+            2: [],
+            1: []
+        }
+
+        for participant in participants:
+            player_name = participant.get("name", "Unknown")
+            player_tag = normalise_tag(participant.get("tag", ""))
+
+            decks_used_today = participant.get("decksUsedToday")
+            if decks_used_today is None:
+                decks_used_today = participant.get("decksUsed", 0)
+
+            try:
+                decks_used_today = int(decks_used_today)
+            except Exception:
+                decks_used_today = 0
+
+            attacks_remaining = max(0, 4 - decks_used_today)
+
+            if attacks_remaining in groups:
+                discord_user_id = link_map.get(player_tag)
+
+                if discord_user_id:
+                    entry = f"<@{discord_user_id}>"
+                else:
+                    entry = player_name
+
+                groups[attacks_remaining].append(entry)
+
+        sections = []
+        for remaining in [4, 3, 2, 1]:
+            players = groups[remaining]
+            if players:
+                section = "\n".join(players)
+            else:
+                section = "*None*"
+
+            sections.append(
+                f"**{remaining} attacks remaining**\n{section}"
+            )
+
+        everyone_done = all(len(groups[n]) == 0 for n in [4, 3, 2, 1])
+
+        if everyone_done:
+            message = (
+                f"**{clan_name} ({clan_tag})**\n"
+                "Manual war nudge\n\n"
+                "Everyone has used all of their attacks."
+            )
+        else:
+            message = (
+                f"**{clan_name} ({clan_tag})**\n"
+                "Manual war nudge for players with attacks remaining\n\n"
+                + "\n\n".join(sections)
+            )
+
+        await interaction.followup.send(
+            message,
+            ephemeral=False,
+            allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False)
+        )
+
+    except Exception as e:
+        await interaction.followup.send(
+            f"Failed to send war nudge: {e}",
+            ephemeral=True
+        )
+
+
 @register.error
 @update.error
 @unlink.error
 @listplayers.error
 @player_db.error
+@announce.error
 async def admin_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.errors.CheckFailure):
         if interaction.response.is_done():
