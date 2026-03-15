@@ -23,6 +23,7 @@ UNLINK_ALLOWED_ROLES = {"Developer", "S.B Leader", "TempAdmin", "Moderator"}
 UPDATE_ALLOWED_ROLES = {"Developer", "S.B Leader", "TempAdmin", "Moderator"}
 PLAYER_DB_ALLOWED_ROLES = {"Developer", "S.B Leader", "TempAdmin", "Moderator", "S.O Leader", "S.B Co-Leader", "S.O Co-Leader"}
 ANNOUNCE_ALLOWED_ROLES = {"The Warhorn Crew"}
+PLAYERS_ALLOWED_ROLES = {"Developer", "S.B Leader", "TempAdmin", "Moderator"}
 
 
 def user_has_allowed_role(interaction: discord.Interaction, allowed_roles: set[str]) -> bool:
@@ -66,6 +67,11 @@ def player_db_only():
 def announce_only():
     async def predicate(interaction: discord.Interaction) -> bool:
         return user_has_allowed_role(interaction, ANNOUNCE_ALLOWED_ROLES)
+    return app_commands.check(predicate)
+
+def players_only():
+    async def predicate(interaction: discord.Interaction) -> bool:
+        return user_has_allowed_role(interaction, PLAYERS_ALLOWED_ROLES)
     return app_commands.check(predicate)
 
 
@@ -493,12 +499,122 @@ async def announce(interaction: discord.Interaction):
         )
 
 
+@bot.tree.command(name="players", description="Show linked players split into Swimming Banana and non-SB players")
+@players_only()
+async def players(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+
+    try:
+        # Live clan data
+        clan_data = await get_clan_data(CLAN_TAG)
+        clan_name = clan_data.get("name", "Unknown Clan")
+        clan_tag = clan_data.get("tag", CLAN_TAG)
+        clan_members = clan_data.get("memberList", [])
+
+        # Live clan member map
+        live_member_map = {
+            normalise_tag(member.get("tag", "")): member.get("name", "Unknown")
+            for member in clan_members
+        }
+        live_member_tags = set(live_member_map.keys())
+
+        # Linked DB entries
+        link_rows = get_all_links_by_tag()
+        link_map = {normalise_tag(cr_tag): discord_user_id for cr_tag, discord_user_id in link_rows}
+
+        sb_linked = []
+        other_linked = []
+
+        for cr_tag, discord_user_id in link_map.items():
+            if cr_tag in live_member_tags:
+                player_name = live_member_map.get(cr_tag, "Unknown")
+                sb_linked.append((player_name, cr_tag, discord_user_id))
+            else:
+                try:
+                    player_data = await get_player_data(cr_tag)
+                    player_name = player_data.get("name", "Unknown")
+                except Exception:
+                    player_name = "Unknown"
+
+                other_linked.append((player_name, cr_tag, discord_user_id))
+
+        # Sort alphabetically by player name
+        sb_linked.sort(key=lambda x: x[0].lower())
+        other_linked.sort(key=lambda x: x[0].lower())
+
+        sections = []
+
+        if sb_linked:
+            sb_lines = [
+                f"**{name}** | `{tag}` | <@{discord_user_id}>"
+                for name, tag, discord_user_id in sb_linked
+            ]
+            sections.append(
+                f"**Swimming Banana linked players**\n"
+                f"**Clan:** {clan_name} ({clan_tag})\n"
+                + "\n".join(sb_lines)
+            )
+        else:
+            sections.append(
+                f"**Swimming Banana linked players**\n"
+                f"**Clan:** {clan_name} ({clan_tag})\n"
+                "*None*"
+            )
+
+        if other_linked:
+            other_lines = [
+                f"**{name}** | `{tag}` | <@{discord_user_id}>"
+                for name, tag, discord_user_id in other_linked
+            ]
+            sections.append(
+                "**Other linked players**\n" + "\n".join(other_lines)
+            )
+        else:
+            sections.append("**Other linked players**\n*None*")
+
+        header = (
+            f"**Linked Players Overview**\n"
+            f"Current default clan: **{clan_name} ({clan_tag})**\n"
+        )
+
+        messages = []
+        current_message = header
+
+        for section in sections:
+            test_message = current_message + "\n\n" + section
+            if len(test_message) > 1900:
+                messages.append(current_message)
+                current_message = header + "\n\n" + section
+            else:
+                if current_message == header:
+                    current_message += "\n\n" + section
+                else:
+                    current_message += "\n\n" + section
+
+        if current_message:
+            messages.append(current_message)
+
+        for msg in messages:
+            await interaction.followup.send(
+                msg,
+                ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none()
+            )
+
+    except Exception as e:
+        await interaction.followup.send(
+            f"Failed to build players view: {e}",
+            ephemeral=True
+        )
+
+
 @register.error
 @update.error
 @unlink.error
 @listplayers.error
 @player_db.error
 @announce.error
+@players.error
 async def admin_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.errors.CheckFailure):
         if interaction.response.is_done():
