@@ -11,14 +11,12 @@ from database import (
     get_tag,
     get_discord_user_by_tag,
     delete_link,
-    get_all_links,
     get_all_links_by_tag
 )
 from clash_api import get_player_data, get_clan_members, normalise_tag
 
 
 REGISTER_ALLOWED_ROLES = {"Developer", "S.B Leader", "TempAdmin", "Moderator"}
-LIST_ALLOWED_ROLES = {"Developer", "S.B Leader", "TempAdmin", "Moderator"}
 UNLINK_ALLOWED_ROLES = {"Developer", "S.B Leader", "TempAdmin", "Moderator"}
 UPDATE_ALLOWED_ROLES = {"Developer", "S.B Leader", "TempAdmin", "Moderator"}
 PLAYER_DB_ALLOWED_ROLES = {"Developer", "S.B Leader", "TempAdmin", "Moderator", "S.O Leader", "S.B Co-Leader", "S.O Co-Leader"}
@@ -37,12 +35,6 @@ def user_has_allowed_role(interaction: discord.Interaction, allowed_roles: set[s
 def register_only():
     async def predicate(interaction: discord.Interaction) -> bool:
         return user_has_allowed_role(interaction, REGISTER_ALLOWED_ROLES)
-    return app_commands.check(predicate)
-
-
-def list_only():
-    async def predicate(interaction: discord.Interaction) -> bool:
-        return user_has_allowed_role(interaction, LIST_ALLOWED_ROLES)
     return app_commands.check(predicate)
 
 
@@ -331,41 +323,6 @@ async def unlink(interaction: discord.Interaction, user: discord.Member):
     )
 
 
-@bot.tree.command(name="listplayers", description="Show all registered Clash Royale player links")
-@list_only()
-async def listplayers(interaction: discord.Interaction):
-    links = get_all_links()
-
-    if not links:
-        await interaction.response.send_message(
-            "No players are currently registered.",
-            ephemeral=True
-        )
-        return
-
-    lines = []
-    for discord_user_id, cr_tag, linked_by_discord_id, linked_at in links:
-        lines.append(f"<@{discord_user_id}> - `{cr_tag}`")
-
-    message = "\n".join(lines)
-
-    if len(message) > 1900:
-        chunks = [message[i:i + 1900] for i in range(0, len(message), 1900)]
-
-        await interaction.response.send_message(
-            f"Registered players:\n{chunks[0]}",
-            ephemeral=True
-        )
-
-        for chunk in chunks[1:]:
-            await interaction.followup.send(chunk, ephemeral=True)
-    else:
-        await interaction.response.send_message(
-            f"Registered players:\n{message}",
-            ephemeral=True
-        )
-
-
 @bot.tree.command(name="announce", description="Send a manual war nudge for players with attacks remaining")
 @announce_only()
 async def announce(interaction: discord.Interaction):
@@ -642,7 +599,6 @@ async def players(interaction: discord.Interaction):
 @register.error
 @update.error
 @unlink.error
-@listplayers.error
 @player_db.error
 @announce.error
 @players.error
