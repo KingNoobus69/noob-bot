@@ -219,15 +219,20 @@ async def player_db(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=False)
 
     try:
+        # Live clan data every time
         clan_data = await get_clan_data(CLAN_TAG)
         clan_name = clan_data.get("name", "Unknown Clan")
         clan_tag = clan_data.get("tag", CLAN_TAG)
         clan_members = clan_data.get("memberList", [])
 
+        # Normalise DB tag map for safer matching
         link_rows = get_all_links_by_tag()
         link_map = {normalise_tag(cr_tag): discord_user_id for cr_tag, discord_user_id in link_rows}
 
-        linked_count = sum(1 for member in clan_members if member.get("tag") in link_map)
+        linked_count = sum(
+            1 for member in clan_members
+            if normalise_tag(member.get("tag", "")) in link_map
+        )
 
         header_lines = [
             f"**{clan_name} ({clan_tag})**",
@@ -240,9 +245,11 @@ async def player_db(interaction: discord.Interaction):
         lines = []
         for member in clan_members:
             name = member.get("name", "Unknown")[:20]
-            tag = member.get("tag", "N/A")[:12]
+            raw_tag = member.get("tag", "N/A")
+            norm_tag = normalise_tag(raw_tag)
+            display_tag = norm_tag[:12]
 
-            discord_user_id = link_map.get(tag)
+            discord_user_id = link_map.get(norm_tag)
             linked_text = "Yes" if discord_user_id else "No"
 
             if discord_user_id:
@@ -250,7 +257,7 @@ async def player_db(interaction: discord.Interaction):
             else:
                 discord_text = "-"
 
-            table_part = f"`{name:<20} | {tag:<12} | {linked_text:<6} |`"
+            table_part = f"`{name:<20} | {display_tag:<12} | {linked_text:<6} |`"
             lines.append(f"{table_part} {discord_text}")
 
         footer = f"\n**Linked players:** {linked_count}/{len(clan_members)}"
@@ -271,7 +278,11 @@ async def player_db(interaction: discord.Interaction):
 
         for i, msg in enumerate(messages, start=1):
             if len(messages) > 1:
-                page_header = f"**{clan_name} ({clan_tag})**\nCurrent clan member Discord link overview\n**Page {i}/{len(messages)}**\n"
+                page_header = (
+                    f"**{clan_name} ({clan_tag})**\n"
+                    "Current clan member Discord link overview\n"
+                    f"**Page {i}/{len(messages)}**\n"
+                )
                 if i == 1:
                     body = "\n".join(header_lines[3:]) + "\n" + "\n".join(msg.split("\n")[5:-1])
                     final_msg = page_header + body + "\n" + msg.split("\n")[-1]
