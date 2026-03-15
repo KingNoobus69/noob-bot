@@ -2,6 +2,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from clash_api import get_player_data, get_clan_data, get_current_river_race, normalise_tag
+from player_services import classify_linked_players
 
 from config import DISCORD_TOKEN, GUILD_ID, CLAN_TAG, ORANGE_CLAN_TAG
 from database import (
@@ -462,58 +463,16 @@ async def players(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
 
     try:
-        # Live clan data
-        sb_data = await get_clan_data(CLAN_TAG)
-        sb_name = sb_data.get("name", "Swimming Banana")
-        sb_tag = sb_data.get("tag", CLAN_TAG)
-        sb_members = sb_data.get("memberList", [])
+        player_data = await classify_linked_players()
 
-        so_data = await get_clan_data(ORANGE_CLAN_TAG)
-        so_name = so_data.get("name", "Swimming Orange")
-        so_tag = so_data.get("tag", ORANGE_CLAN_TAG)
-        so_members = so_data.get("memberList", [])
+        sb_name = player_data["sb_name"]
+        sb_tag = player_data["sb_tag"]
+        so_name = player_data["so_name"]
+        so_tag = player_data["so_tag"]
 
-        # Live tag maps
-        sb_member_map = {
-            normalise_tag(member.get("tag", "")): member.get("name", "Unknown")
-            for member in sb_members
-        }
-        sb_tags = set(sb_member_map.keys())
-
-        so_member_map = {
-            normalise_tag(member.get("tag", "")): member.get("name", "Unknown")
-            for member in so_members
-        }
-        so_tags = set(so_member_map.keys())
-
-        # Linked DB entries
-        link_rows = get_all_links_by_tag()
-        link_map = {normalise_tag(cr_tag): discord_user_id for cr_tag, discord_user_id in link_rows}
-
-        sb_linked = []
-        so_linked = []
-        other_linked = []
-
-        for cr_tag, discord_user_id in link_map.items():
-            if cr_tag in sb_tags:
-                player_name = sb_member_map.get(cr_tag, "Unknown")
-                sb_linked.append((player_name, cr_tag, discord_user_id))
-            elif cr_tag in so_tags:
-                player_name = so_member_map.get(cr_tag, "Unknown")
-                so_linked.append((player_name, cr_tag, discord_user_id))
-            else:
-                try:
-                    player_data = await get_player_data(cr_tag)
-                    player_name = player_data.get("name", "Unknown")
-                except Exception:
-                    player_name = "Unknown"
-
-                other_linked.append((player_name, cr_tag, discord_user_id))
-
-        # Sort alphabetically
-        sb_linked.sort(key=lambda x: x[0].lower())
-        so_linked.sort(key=lambda x: x[0].lower())
-        other_linked.sort(key=lambda x: x[0].lower())
+        sb_linked = player_data["sb_linked"]
+        so_linked = player_data["so_linked"]
+        other_linked = player_data["other_linked"]
 
         sections = []
 
