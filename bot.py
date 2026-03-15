@@ -3,7 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 from clash_api import get_player_data, get_clan_data, get_current_river_race, normalise_tag
 
-from config import DISCORD_TOKEN, GUILD_ID, CLAN_TAG
+from config import DISCORD_TOKEN, GUILD_ID, CLAN_TAG, ORANGE_CLAN_TAG
 from database import (
     init_db,
     insert_link,
@@ -499,36 +499,51 @@ async def announce(interaction: discord.Interaction):
         )
 
 
-@bot.tree.command(name="players", description="Show linked players split into Swimming Banana and non-SB players")
+@bot.tree.command(name="players", description="Show linked players split into Swimming Banana, Swimming Orange, and others")
 @players_only()
 async def players(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
 
     try:
         # Live clan data
-        clan_data = await get_clan_data(CLAN_TAG)
-        clan_name = clan_data.get("name", "Unknown Clan")
-        clan_tag = clan_data.get("tag", CLAN_TAG)
-        clan_members = clan_data.get("memberList", [])
+        sb_data = await get_clan_data(CLAN_TAG)
+        sb_name = sb_data.get("name", "Swimming Banana")
+        sb_tag = sb_data.get("tag", CLAN_TAG)
+        sb_members = sb_data.get("memberList", [])
 
-        # Live clan member map
-        live_member_map = {
+        so_data = await get_clan_data(ORANGE_CLAN_TAG)
+        so_name = so_data.get("name", "Swimming Orange")
+        so_tag = so_data.get("tag", ORANGE_CLAN_TAG)
+        so_members = so_data.get("memberList", [])
+
+        # Live tag maps
+        sb_member_map = {
             normalise_tag(member.get("tag", "")): member.get("name", "Unknown")
-            for member in clan_members
+            for member in sb_members
         }
-        live_member_tags = set(live_member_map.keys())
+        sb_tags = set(sb_member_map.keys())
+
+        so_member_map = {
+            normalise_tag(member.get("tag", "")): member.get("name", "Unknown")
+            for member in so_members
+        }
+        so_tags = set(so_member_map.keys())
 
         # Linked DB entries
         link_rows = get_all_links_by_tag()
         link_map = {normalise_tag(cr_tag): discord_user_id for cr_tag, discord_user_id in link_rows}
 
         sb_linked = []
+        so_linked = []
         other_linked = []
 
         for cr_tag, discord_user_id in link_map.items():
-            if cr_tag in live_member_tags:
-                player_name = live_member_map.get(cr_tag, "Unknown")
+            if cr_tag in sb_tags:
+                player_name = sb_member_map.get(cr_tag, "Unknown")
                 sb_linked.append((player_name, cr_tag, discord_user_id))
+            elif cr_tag in so_tags:
+                player_name = so_member_map.get(cr_tag, "Unknown")
+                so_linked.append((player_name, cr_tag, discord_user_id))
             else:
                 try:
                     player_data = await get_player_data(cr_tag)
@@ -538,8 +553,9 @@ async def players(interaction: discord.Interaction):
 
                 other_linked.append((player_name, cr_tag, discord_user_id))
 
-        # Sort alphabetically by player name
+        # Sort alphabetically
         sb_linked.sort(key=lambda x: x[0].lower())
+        so_linked.sort(key=lambda x: x[0].lower())
         other_linked.sort(key=lambda x: x[0].lower())
 
         sections = []
@@ -550,14 +566,31 @@ async def players(interaction: discord.Interaction):
                 for name, tag, discord_user_id in sb_linked
             ]
             sections.append(
-                f"**Swimming Banana linked players**\n"
-                f"**Clan:** {clan_name} ({clan_tag})\n"
+                f"**Swimming Banana linked players ({len(sb_linked)})**\n"
+                f"**Clan:** {sb_name} ({sb_tag})\n"
                 + "\n".join(sb_lines)
             )
         else:
             sections.append(
-                f"**Swimming Banana linked players**\n"
-                f"**Clan:** {clan_name} ({clan_tag})\n"
+                f"**Swimming Banana linked players (0)**\n"
+                f"**Clan:** {sb_name} ({sb_tag})\n"
+                "*None*"
+            )
+
+        if so_linked:
+            so_lines = [
+                f"**{name}** | `{tag}` | <@{discord_user_id}>"
+                for name, tag, discord_user_id in so_linked
+            ]
+            sections.append(
+                f"**Swimming Orange linked players ({len(so_linked)})**\n"
+                f"**Clan:** {so_name} ({so_tag})\n"
+                + "\n".join(so_lines)
+            )
+        else:
+            sections.append(
+                f"**Swimming Orange linked players (0)**\n"
+                f"**Clan:** {so_name} ({so_tag})\n"
                 "*None*"
             )
 
@@ -567,14 +600,15 @@ async def players(interaction: discord.Interaction):
                 for name, tag, discord_user_id in other_linked
             ]
             sections.append(
-                "**Other linked players**\n" + "\n".join(other_lines)
+                f"**Other linked players ({len(other_linked)})**\n"
+                + "\n".join(other_lines)
             )
         else:
-            sections.append("**Other linked players**\n*None*")
+            sections.append("**Other linked players (0)**\n*None*")
 
         header = (
-            f"**Linked Players Overview**\n"
-            f"Current default clan: **{clan_name} ({clan_tag})**\n"
+            "**Linked Players Overview**\n"
+            f"Tracked clans: **{sb_name} ({sb_tag})** and **{so_name} ({so_tag})**"
         )
 
         messages = []
@@ -586,10 +620,7 @@ async def players(interaction: discord.Interaction):
                 messages.append(current_message)
                 current_message = header + "\n\n" + section
             else:
-                if current_message == header:
-                    current_message += "\n\n" + section
-                else:
-                    current_message += "\n\n" + section
+                current_message += "\n\n" + section
 
         if current_message:
             messages.append(current_message)

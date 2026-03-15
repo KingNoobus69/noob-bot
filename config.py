@@ -7,6 +7,7 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 CLASH_API_TOKEN = os.getenv("CLASH_API_TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID"))
 CLAN_TAG = os.getenv("CLAN_TAG")
+ORANGE_CLAN_TAG = os.getenv("ORANGE_CLAN_TAG")
 
 if not DISCORD_TOKEN:
     raise ValueError("Missing DISCORD_TOKEN in .env")
@@ -19,3 +20,6 @@ if not GUILD_ID:
 
 if not CLAN_TAG:
     raise ValueError("Missing CLAN_TAG in .env")
+
+if not ORANGE_CLAN_TAG:
+    raise ValueError("Missing ORANGE_CLAN_TAG in .env")
