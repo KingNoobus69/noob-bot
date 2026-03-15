@@ -225,7 +225,7 @@ async def player_db(interaction: discord.Interaction):
         clan_members = clan_data.get("memberList", [])
 
         link_rows = get_all_links_by_tag()
-        link_map = {cr_tag: discord_user_id for cr_tag, discord_user_id in link_rows}
+        link_map = {normalise_tag(cr_tag): discord_user_id for cr_tag, discord_user_id in link_rows}
 
         linked_count = sum(1 for member in clan_members if member.get("tag") in link_map)
 
@@ -355,6 +355,13 @@ async def announce(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=False)
 
     try:
+        # Live clan data
+        clan_data = await get_clan_data(CLAN_TAG)
+        clan_name = clan_data.get("name", "Unknown Clan")
+        clan_tag = clan_data.get("tag", CLAN_TAG)
+        clan_members = clan_data.get("memberList", [])
+
+        # Live race data
         race_data = await get_current_river_race(CLAN_TAG)
 
         # Block training days
@@ -373,7 +380,14 @@ async def announce(interaction: discord.Interaction):
             )
             return
 
-        # Find our clan block safely
+        # Current live clan members as source of truth
+        live_member_map = {
+            normalise_tag(member.get("tag", "")): member.get("name", "Unknown")
+            for member in clan_members
+        }
+        live_member_tags = set(live_member_map.keys())
+
+        # Find our clan block safely in race data
         our_clan = None
 
         if race_data.get("clan") and normalise_tag(race_data["clan"].get("tag", "")) == normalise_tag(CLAN_TAG):
@@ -386,17 +400,16 @@ async def announce(interaction: discord.Interaction):
 
         if not our_clan:
             await interaction.followup.send(
-                "Could not find Swimming Banana in the current river race data.",
+                f"Could not find {clan_name} in the current river race data.",
                 ephemeral=True
             )
             return
 
-        clan_name = our_clan.get("name", "Unknown Clan")
-        clan_tag = our_clan.get("tag", CLAN_TAG)
         participants = our_clan.get("participants", [])
 
+        # Normalize DB links
         link_rows = get_all_links_by_tag()
-        link_map = {cr_tag: discord_user_id for cr_tag, discord_user_id in link_rows}
+        link_map = {normalise_tag(cr_tag): discord_user_id for cr_tag, discord_user_id in link_rows}
 
         groups = {
             4: [],
@@ -406,8 +419,13 @@ async def announce(interaction: discord.Interaction):
         }
 
         for participant in participants:
-            player_name = participant.get("name", "Unknown")
             player_tag = normalise_tag(participant.get("tag", ""))
+
+            # Ignore anyone who is not currently in the live clan member list
+            if player_tag not in live_member_tags:
+                continue
+
+            player_name = live_member_map.get(player_tag, participant.get("name", "Unknown"))
 
             decks_used_today = participant.get("decksUsedToday")
             if decks_used_today is None:

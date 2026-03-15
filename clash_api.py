@@ -21,7 +21,8 @@ async def get_player_data(player_tag: str):
     url = f"{BASE_URL}/players/{encoded_tag}"
 
     headers = {
-        "Authorization": f"Bearer {CLASH_API_TOKEN}"
+    "Authorization": f"Bearer {CLASH_API_TOKEN}",
+    "Cache-Control": "no-cache"
     }
 
     async with aiohttp.ClientSession() as session:
@@ -38,7 +39,8 @@ async def get_clan_members(clan_tag: str):
     url = f"{BASE_URL}/clans/{encoded_tag}"
 
     headers = {
-        "Authorization": f"Bearer {CLASH_API_TOKEN}"
+        "Authorization": f"Bearer {CLASH_API_TOKEN}",
+        "Cache-Control": "no-cache"
     }
 
     async with aiohttp.ClientSession() as session:
@@ -55,7 +57,8 @@ async def get_clan_data(clan_tag: str):
     url = f"{BASE_URL}/clans/{encoded_tag}"
 
     headers = {
-        "Authorization": f"Bearer {CLASH_API_TOKEN}"
+        "Authorization": f"Bearer {CLASH_API_TOKEN}",
+        "Cache-Control": "no-cache"
     }
 
     async with aiohttp.ClientSession() as session:
@@ -71,7 +74,8 @@ async def get_current_river_race(clan_tag: str):
     url = f"{BASE_URL}/clans/{encoded_tag}/currentriverrace"
 
     headers = {
-        "Authorization": f"Bearer {CLASH_API_TOKEN}"
+    "Authorization": f"Bearer {CLASH_API_TOKEN}",
+    "Cache-Control": "no-cache"
     }
 
     async with aiohttp.ClientSession() as session:
