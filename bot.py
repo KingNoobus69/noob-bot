@@ -341,12 +341,8 @@ async def announce(interaction: discord.Interaction):
 
         # Block training days
         period_type = str(race_data.get("periodType", "")).lower()
-        section_index = race_data.get("sectionIndex")
 
-        is_training_day = (
-            "training" in period_type
-            or section_index == 0
-        )
+        is_training_day = "training" in period_type
 
         if is_training_day:
             await interaction.followup.send(
